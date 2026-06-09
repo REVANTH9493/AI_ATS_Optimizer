@@ -1,0 +1,52 @@
+{
+    "users": {
+        "demo.google.user@example.com": {
+            "email": "demo.google.user@example.com",
+            "password_hash": null,
+            "name": "Google Demo User",
+            "avatar": "https://lh3.googleusercontent.com/a/default-user",
+            "provider": "google",
+            "created_at": "2026-06-04T20:15:59Z"
+        },
+        "rockr949367@gmail.com": {
+            "email": "rockr949367@gmail.com",
+            "password_hash": null,
+            "name": "revanth N",
+            "avatar": "https://lh3.googleusercontent.com/a/ACg8ocIw8pDLa3g-FKDK-zA_6IniSfz8JSFiWcqq4W6Z9FCpv9jeWQ=s96-c",
+            "provider": "google",
+            "created_at": "2026-06-04T20:15:59Z",
+            "title": "",
+            "phone": "",
+            "skills": [
+                "React",
+                "TypeScript",
+                "Python",
+                "FastAPI"
+            ],
+            "job_title": "",
+            "job_location": "",
+            "min_salary": 0.0,
+            "resume_url": "https://oxxbubrakcaprmokuoii.supabase.co/storage/v1/object/public/resumes/rockr949367@gmail.com/Revanth%20Resume.pdf"
+        },
+        "revanthnagidi1@gmail.com": {
+            "email": "revanthnagidi1@gmail.com",
+            "password_hash": "$2b$12$mQ5wWnsZqDXUjK7Vg9xTluOQjKVboRILB2SMBCDakEBFfsXjSj7GC",
+            "name": "Revanth",
+            "avatar": null,
+            "provider": "credentials",
+            "created_at": "2026-06-04T20:15:59Z",
+            "title": "",
+            "phone": "",
+            "skills": [
+                "React",
+                "TypeScript",
+                "Python",
+                "FastAPI"
+            ],
+            "job_title": "",
+            "job_location": "",
+            "min_salary": 0.0,
+            "resume_url": "http://localhost:8000/uploads/revanthnagidi1@gmail.com/NAGIDI_REVANTH_FlowCV_Resume_2026-06-01.pdf"
+        }
+    }
+}
