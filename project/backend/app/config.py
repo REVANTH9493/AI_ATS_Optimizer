@@ -10,7 +10,8 @@ class Settings(BaseSettings):
     CORS_ORIGINS: list[str] = [
         "http://localhost:3000",  # Next.js default port
         "http://localhost:5173",  # Vite default port
-    ]
+        "https://ai-ats-optimizer.netlify.app",  # Production Netlify URL
+    ] + [origin.strip() for origin in os.getenv("ALLOWED_ORIGINS", "").split(",") if origin.strip()]
     
     # JWT Settings
     JWT_SECRET: str = os.getenv("JWT_SECRET", "super-secret-key-change-in-production")
