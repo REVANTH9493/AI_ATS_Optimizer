@@ -224,6 +224,7 @@ async def google_callback(request: Request, code: Optional[str] = None, state: O
         # Exchange code for access token
         token_response = await client.post(token_url, data=token_data)
         if token_response.status_code != 200:
+            print(f"Google Token Exchange Failed: {token_response.status_code} - {token_response.text}")
             return RedirectResponse(
                 url=f"{frontend_url}/login?error=Failed+to+get+tokens+from+Google"
             )
