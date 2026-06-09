@@ -134,7 +134,9 @@ async def scrape_job_description(url: str) -> str:
         async with httpx.AsyncClient() as client:
             print(f"Jina.ai Scraper: Scraping job listing from {jina_endpoint}...")
             response = await client.get(jina_endpoint, headers=headers, timeout=20.0)
-            if response.status_code != 200:
+            if response.status_code == 451:
+                raise ValueError("This website cannot be crawled due to legal/anti-scraping restrictions. Please copy the job description manually and paste it into the 'Paste Description Text' tab.")
+            elif response.status_code != 200:
                 raise ValueError(f"Failed to fetch job description. Status code {response.status_code}")
             return response.text
     except Exception as e:
