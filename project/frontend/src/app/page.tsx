@@ -7,6 +7,7 @@ import {
   Sparkles, AlertCircle, CheckCircle2, Link, FileUp, Database,
   TrendingUp, Award, BookOpen, X, Copy, Check, ChevronRight, Cpu, ClipboardList
 } from "lucide-react";
+import { API_URL } from "@/config";
 
 interface JobAnalysis {
   company: string;
@@ -132,7 +133,7 @@ export default function HomePage() {
 
     const fetchProfile = async () => {
       try {
-        const res = await fetch("http://localhost:8000/api/auth/me", {
+        const res = await fetch(`${API_URL}/api/auth/me`, {
           headers: { "Authorization": `Bearer ${token}` }
         });
         const data = await res.json();
@@ -191,7 +192,7 @@ export default function HomePage() {
           }, 16000);
 
           try {
-            const response = await fetch("http://localhost:8000/api/ats/optimize", {
+            const response = await fetch(`${API_URL}/api/ats/optimize`, {
               method: "POST",
               headers: {
                 "Content-Type": "application/json",
@@ -250,7 +251,7 @@ export default function HomePage() {
 
     setResetting(true);
     try {
-      const response = await fetch("http://localhost:8000/api/auth/change-password", {
+      const response = await fetch(`${API_URL}/api/auth/change-password`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -327,7 +328,7 @@ export default function HomePage() {
         payload.job_description_text = jobText;
       }
 
-      const response = await fetch("http://localhost:8000/api/ats/optimize", {
+      const response = await fetch(`${API_URL}/api/ats/optimize`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",

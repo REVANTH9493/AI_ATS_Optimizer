@@ -6,6 +6,7 @@ import {
   User, Mail, Phone, LogOut, CheckCircle2, 
   ArrowRight, Loader2, Sparkles, Compass, Key, Lock, X, FileText, AlertCircle, Cpu, Briefcase
 } from "lucide-react";
+import { API_URL } from "@/config";
 
 export default function ProfileSetupPage() {
   const router = useRouter();
@@ -47,7 +48,7 @@ export default function ProfileSetupPage() {
 
     const fetchLatestProfile = async () => {
       try {
-        const response = await fetch("http://localhost:8000/api/auth/me", {
+        const response = await fetch(`${API_URL}/api/auth/me`, {
           headers: {
             "Authorization": `Bearer ${token}`
           }
@@ -106,7 +107,7 @@ export default function ProfileSetupPage() {
 
     setResetting(true);
     try {
-      const response = await fetch("http://localhost:8000/api/auth/change-password", {
+      const response = await fetch(`${API_URL}/api/auth/change-password`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -160,7 +161,7 @@ export default function ProfileSetupPage() {
     }
 
     try {
-      const response = await fetch("http://localhost:8000/api/auth/profile", {
+      const response = await fetch(`${API_URL}/api/auth/profile`, {
         method: "PUT",
         headers: {
           "Content-Type": "application/json",

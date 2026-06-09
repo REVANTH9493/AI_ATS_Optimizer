@@ -6,6 +6,7 @@ import {
   ArrowLeft, Palette, FileDown, Loader2,
   Mail, Phone, Globe, MapPin, Check, Copy, ExternalLink, Sparkles
 } from "lucide-react";
+import { API_URL } from "@/config";
 
 interface Profile {
   network: string;
@@ -108,7 +109,7 @@ export default function ResumePreviewPage() {
     const fetchCombinedResume = async () => {
       try {
         const tailored = JSON.parse(tailoredStr);
-        const response = await fetch("http://localhost:8000/api/exporter/combine-and-export", {
+        const response = await fetch(`${API_URL}/api/exporter/combine-and-export`, {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
@@ -144,7 +145,7 @@ export default function ResumePreviewPage() {
 
     setDownloadingDocx(true);
     try {
-      const response = await fetch(`http://localhost:8000/api/exporter/download/docx?theme=${currentTheme}`, {
+      const response = await fetch(`${API_URL}/api/exporter/download/docx?theme=${currentTheme}`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",

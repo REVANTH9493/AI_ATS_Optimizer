@@ -3,6 +3,7 @@
 import React, { useState, useEffect, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Mail, Lock, User, ArrowRight, AlertCircle, CheckCircle2, Loader2, Compass } from "lucide-react";
+import { API_URL } from "@/config";
 
 function LoginContent() {
   const router = useRouter();
@@ -86,8 +87,8 @@ function LoginContent() {
     setSuccessMessage("");
     
     const url = activeTab === "login" 
-      ? "http://localhost:8000/api/auth/login" 
-      : "http://localhost:8000/api/auth/register";
+      ? `${API_URL}/api/auth/login` 
+      : `${API_URL}/api/auth/register`;
       
     const payload = activeTab === "login"
       ? { email, password }
@@ -135,7 +136,7 @@ function LoginContent() {
     
     try {
       // Get the Google Auth URL from our FastAPI backend
-      const response = await fetch("http://localhost:8000/api/auth/google/url");
+      const response = await fetch(`${API_URL}/api/auth/google/url`);
       const data = await response.json();
       
       if (!response.ok) {
@@ -154,7 +155,7 @@ function LoginContent() {
   // Confirm Mock Login
   const handleConfirmMock = () => {
     setShowMockModal(false);
-    window.location.href = "http://localhost:8000/api/auth/google/callback?mock=true";
+    window.location.href = `${API_URL}/api/auth/google/callback?mock=true`;
   };
 
   return (

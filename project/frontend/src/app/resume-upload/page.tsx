@@ -7,6 +7,7 @@ import {
   FileText, Trash2, ArrowRight, Loader2, Sparkles, RefreshCw,
   Mail, Phone, MapPin, ExternalLink, Code, Briefcase, GraduationCap, Award, ClipboardList, Database, Key, Lock, X, Cpu
 } from "lucide-react";
+import { API_URL } from "@/config";
 
 
 export default function ResumeUploadPage() {
@@ -56,7 +57,7 @@ export default function ResumeUploadPage() {
 
     const checkResumeRedirect = async () => {
       try {
-        const response = await fetch("http://localhost:8000/api/auth/me", {
+        const response = await fetch(`${API_URL}/api/auth/me`, {
           headers: { "Authorization": `Bearer ${token}` }
         });
         const data = await response.json();
@@ -115,7 +116,7 @@ export default function ResumeUploadPage() {
 
     setResetting(true);
     try {
-      const response = await fetch("http://localhost:8000/api/auth/change-password", {
+      const response = await fetch(`${API_URL}/api/auth/change-password`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -221,7 +222,7 @@ export default function ResumeUploadPage() {
     const stage2Timeout = setTimeout(() => setParseStage("saving"), 6000);
 
     try {
-      const response = await fetch("http://localhost:8000/api/resume/parse", {
+      const response = await fetch(`${API_URL}/api/resume/parse`, {
         method: "POST",
         headers: {
           "Authorization": `Bearer ${token}`
@@ -273,7 +274,7 @@ export default function ResumeUploadPage() {
     formData.append("file", file);
 
     try {
-      const response = await fetch("http://localhost:8000/api/resume/upload", {
+      const response = await fetch(`${API_URL}/api/resume/upload`, {
         method: "POST",
         headers: {
           "Authorization": `Bearer ${token}`
