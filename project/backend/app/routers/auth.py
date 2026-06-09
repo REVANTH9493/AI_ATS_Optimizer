@@ -1,6 +1,7 @@
-from fastapi import APIRouter, HTTPException, Depends, status
+from fastapi import APIRouter, HTTPException, Depends, status, Request
 from fastapi.security import OAuth2PasswordBearer
 from fastapi.responses import RedirectResponse
+import os
 from pydantic import BaseModel, EmailStr
 import bcrypt
 import jwt
@@ -133,37 +134,50 @@ async def login(user_in: UserLogin):
     }
 
 @router.get("/google/url")
-async def get_google_oauth_url(mock: Optional[bool] = False):
+async def get_google_oauth_url(request: Request, state: Optional[str] = None, mock: Optional[bool] = False):
     """
     Returns the Google OAuth redirect URL.
     If no client credentials are set, or if mock=True, it instructs the frontend
     to run in sandbox demo mode.
     """
+    frontend_url = state or "http://localhost:3000"
+    
     if mock or not settings.GOOGLE_CLIENT_ID or not settings.GOOGLE_CLIENT_SECRET:
         return {
-            "url": "http://localhost:3000/login?mock_google=true",
+            "url": f"{frontend_url}/login?mock_google=true",
             "is_mock": True,
             "message": "Google Client Credentials not set. Running in development sandbox mode."
         }
+        
+    # Determine redirect_uri: if configured in environment, use it. Otherwise, construct dynamically!
+    redirect_uri = settings.GOOGLE_REDIRECT_URI
+    if not os.getenv("GOOGLE_REDIRECT_URI") or settings.GOOGLE_REDIRECT_URI == "http://localhost:8000/api/auth/google/callback":
+        base = str(request.base_url).rstrip("/")
+        if "localhost" not in base and "127.0.0.1" not in base:
+            base = base.replace("http://", "https://", 1)
+        redirect_uri = f"{base}/api/auth/google/callback"
         
     # Generate Google OAuth authorization URL
     auth_url = (
         "https://accounts.google.com/o/oauth2/v2/auth"
         f"?response_type=code"
         f"&client_id={settings.GOOGLE_CLIENT_ID}"
-        f"&redirect_uri={settings.GOOGLE_REDIRECT_URI}"
+        f"&redirect_uri={redirect_uri}"
         f"&scope=openid%20email%20profile"
         f"&access_type=offline"
         f"&prompt=consent"
+        f"&state={frontend_url}"
     )
     return {"url": auth_url, "is_mock": False}
 
 @router.get("/google/callback")
-async def google_callback(code: Optional[str] = None, mock: Optional[bool] = False):
+async def google_callback(request: Request, code: Optional[str] = None, state: Optional[str] = None, mock: Optional[bool] = False):
     """
     Handles Google OAuth Callback code.
     If mock is True, it simulates google account verification for testing.
     """
+    frontend_url = state or "http://localhost:3000"
+
     # 1. Mock Google Auth Flow (for local testing without client credentials)
     if mock or not code or not settings.GOOGLE_CLIENT_ID or not settings.GOOGLE_CLIENT_SECRET:
         # Create a mock Google user
@@ -184,17 +198,25 @@ async def google_callback(code: Optional[str] = None, mock: Optional[bool] = Fal
         access_token = create_access_token(data={"sub": user["email"]})
         # Redirect to frontend callback route with token
         return RedirectResponse(
-            url=f"http://localhost:3000/auth/callback?token={access_token}&email={user['email']}&name={user['name']}"
+            url=f"{frontend_url}/auth/callback?token={access_token}&email={user['email']}&name={user['name']}"
         )
 
     # 2. Real Google Auth Flow
+    # Determine redirect_uri: if configured in environment, use it. Otherwise, construct dynamically!
+    redirect_uri = settings.GOOGLE_REDIRECT_URI
+    if not os.getenv("GOOGLE_REDIRECT_URI") or settings.GOOGLE_REDIRECT_URI == "http://localhost:8000/api/auth/google/callback":
+        base = str(request.base_url).rstrip("/")
+        if "localhost" not in base and "127.0.0.1" not in base:
+            base = base.replace("http://", "https://", 1)
+        redirect_uri = f"{base}/api/auth/google/callback"
+
     # Exchange authorization code for token
     token_url = "https://oauth2.googleapis.com/token"
     token_data = {
         "code": code,
         "client_id": settings.GOOGLE_CLIENT_ID,
         "client_secret": settings.GOOGLE_CLIENT_SECRET,
-        "redirect_uri": settings.GOOGLE_REDIRECT_URI,
+        "redirect_uri": redirect_uri,
         "grant_type": "authorization_code"
     }
     
@@ -203,7 +225,7 @@ async def google_callback(code: Optional[str] = None, mock: Optional[bool] = Fal
         token_response = await client.post(token_url, data=token_data)
         if token_response.status_code != 200:
             return RedirectResponse(
-                url=f"http://localhost:3000/login?error=Failed+to+get+tokens+from+Google"
+                url=f"{frontend_url}/login?error=Failed+to+get+tokens+from+Google"
             )
         
         tokens = token_response.json()
@@ -215,7 +237,7 @@ async def google_callback(code: Optional[str] = None, mock: Optional[bool] = Fal
         user_info_response = await client.get(user_info_url, headers=headers)
         if user_info_response.status_code != 200:
             return RedirectResponse(
-                url=f"http://localhost:3000/login?error=Failed+to+get+user+info+from+Google"
+                url=f"{frontend_url}/login?error=Failed+to+get+user+info+from+Google"
             )
             
         google_profile = user_info_response.json()
@@ -225,7 +247,7 @@ async def google_callback(code: Optional[str] = None, mock: Optional[bool] = Fal
         
         if not email:
             return RedirectResponse(
-                url=f"http://localhost:3000/login?error=Google+account+does+not+provide+email"
+                url=f"{frontend_url}/login?error=Google+account+does+not+provide+email"
             )
 
         # Log in or register the user
@@ -251,7 +273,7 @@ async def google_callback(code: Optional[str] = None, mock: Optional[bool] = Fal
 
         access_token = create_access_token(data={"sub": user["email"]})
         return RedirectResponse(
-            url=f"http://localhost:3000/auth/callback?token={access_token}&email={user['email']}&name={user['name']}&resume_url={user.get('resume_url') or ''}"
+            url=f"{frontend_url}/auth/callback?token={access_token}&email={user['email']}&name={user['name']}&resume_url={user.get('resume_url') or ''}"
         )
 
 class ProfileUpdate(BaseModel):

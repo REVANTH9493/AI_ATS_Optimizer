@@ -136,7 +136,7 @@ function LoginContent() {
     
     try {
       // Get the Google Auth URL from our FastAPI backend
-      const response = await fetch(`${API_URL}/api/auth/google/url`);
+      const response = await fetch(`${API_URL}/api/auth/google/url?state=${encodeURIComponent(window.location.origin)}`);
       const data = await response.json();
       
       if (!response.ok) {
@@ -155,7 +155,7 @@ function LoginContent() {
   // Confirm Mock Login
   const handleConfirmMock = () => {
     setShowMockModal(false);
-    window.location.href = `${API_URL}/api/auth/google/callback?mock=true`;
+    window.location.href = `${API_URL}/api/auth/google/callback?mock=true&state=${encodeURIComponent(window.location.origin)}`;
   };
 
   return (
