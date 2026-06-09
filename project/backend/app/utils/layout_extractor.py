@@ -3,18 +3,8 @@ import pypdf
 import docx
 from typing import Dict, Any, List
 
-# Try imports for LayoutLMv3
-try:
-    from PIL import Image
-    import pdf2image
-    import easyocr
-    from transformers import AutoProcessor, AutoModel
-    import torch
-    
-    LAYOUTLM_ACTIVE = True
-except ImportError as e:
-    print(f"LayoutLMv3 deep learning packages not fully available, using fallback text parsers: {e}")
-    LAYOUTLM_ACTIVE = False
+# Try imports for LayoutLMv3 (Deactivated for memory optimization on Render free tier)
+LAYOUTLM_ACTIVE = False
 
 def extract_text_pypdf(file_bytes: bytes) -> str:
     """Standard pypdf fallback text extractor."""
