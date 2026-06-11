@@ -414,7 +414,7 @@ export default function HomePage() {
             {userProfile ? (
               <>
                 <button
-                  onClick={() => router.push("/resume-upload")}
+                  onClick={() => router.push("/resume-upload?force=true")}
                   className="hidden sm:flex items-center gap-2 px-4 py-2 rounded-xl bg-white/[0.02] border border-white/10 hover:bg-white/[0.05] transition-all text-xs font-semibold text-zinc-300"
                 >
                   <FileUp className="h-4 w-4 text-indigo-400" />
