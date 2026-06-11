@@ -2,6 +2,7 @@ import os
 import json
 import httpx
 import re
+import time
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, ValidationError
 from typing import Optional, Dict, Any
@@ -13,6 +14,16 @@ from app.schemas.ats_schema import ATSOptimizeResponse
 from app.utils.gemini_client import client as gemini_client, generate_chat_completion
 
 router = APIRouter(prefix="/ats", tags=["ATS Optimization"])
+
+def sanitize_filename_part(name: str) -> str:
+    if not name:
+        return "unknown"
+    # Keep alphanumeric, dashes, and underscores
+    sanitized = re.sub(r"[^\w\s\-]", "", name)
+    sanitized = re.sub(r"\s+", "_", sanitized.strip())
+    # Replace double underscores with single underscore
+    sanitized = re.sub(r"__+", "_", sanitized)
+    return sanitized or "unknown"
 
 def _split_degree_and_gpa(degree_val: Optional[str]) -> tuple[Optional[str], Optional[str]]:
     if not degree_val:
@@ -377,6 +388,42 @@ async def optimize_resume(
             # Validate schema
             validated_response = ATSOptimizeResponse.model_validate_json(response_text)
             print("Gemini: Resume tailored and validated successfully.")
+            
+            # Save to search history in Supabase Storage
+            try:
+                user_email = current_user["email"]
+                company = validated_response.job_analysis.company
+                role = validated_response.job_analysis.job_title
+                score = validated_response.ats_analysis.ats_score_after
+                
+                company_safe = sanitize_filename_part(company)
+                role_safe = sanitize_filename_part(role)
+                timestamp = int(time.time())
+                
+                filename = f"{company_safe}__{role_safe}__{score}__{timestamp}.json"
+                storage_path = f"{user_email}/history/{filename}"
+                
+                history_payload = {
+                    "company": company,
+                    "role": role,
+                    "score": score,
+                    "timestamp": timestamp,
+                    "job_url": req.job_url,
+                    "job_description_text": req.job_description_text or job_desc,
+                    "resume_json": resume_data,
+                    "optimized_response": validated_response.model_dump()
+                }
+                
+                payload_bytes = json.dumps(history_payload, indent=2).encode("utf-8")
+                supabase_client.storage.from_("resumes").upload(
+                    path=storage_path,
+                    file=payload_bytes,
+                    file_options={"content-type": "application/json", "upsert": "true"}
+                )
+                print(f"ATS optimization result saved to history: {storage_path}")
+            except Exception as history_err:
+                print(f"Failed to save ATS optimization history: {history_err}")
+
             return validated_response
             
         except ValidationError as val_err:
@@ -398,3 +445,93 @@ async def optimize_resume(
         status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
         detail="Failed to format the tailored resume correctly. Please try again."
     )
+
+
+@router.get("/history")
+async def list_history(
+    current_user: dict = Depends(get_current_user)
+) -> dict:
+    user_email = current_user["email"]
+    try:
+        # List files under f"{user_email}/history" folder
+        files = supabase_client.storage.from_("resumes").list(f"{user_email}/history")
+        
+        history_items = []
+        for f in (files or []):
+            name = f.get("name", "")
+            if name.endswith(".json"):
+                parts = name.replace(".json", "").split("__")
+                if len(parts) >= 4:
+                    company = parts[0].replace("_", " ")
+                    role = parts[1].replace("_", " ")
+                    try:
+                        score = int(parts[2])
+                    except ValueError:
+                        score = 0
+                    try:
+                        timestamp = int(parts[3])
+                    except ValueError:
+                        timestamp = 0
+                    
+                    history_items.append({
+                        "filename": name,
+                        "company": company,
+                        "role": role,
+                        "score": score,
+                        "timestamp": timestamp,
+                        "created_at": f.get("created_at") or f.get("updated_at")
+                    })
+        
+        # Sort history by timestamp descending
+        history_items.sort(key=lambda x: x["timestamp"], reverse=True)
+        
+        return {
+            "status": "success",
+            "history": history_items
+        }
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to fetch history: {str(e)}"
+        )
+
+
+@router.get("/history/{filename}")
+async def get_history_detail(
+    filename: str,
+    current_user: dict = Depends(get_current_user)
+) -> dict:
+    user_email = current_user["email"]
+    try:
+        storage_path = f"{user_email}/history/{filename}"
+        file_bytes = supabase_client.storage.from_("resumes").download(storage_path)
+        history_data = json.loads(file_bytes.decode("utf-8"))
+        return {
+            "status": "success",
+            "data": history_data
+        }
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"History record not found: {str(e)}"
+        )
+
+
+@router.delete("/history/{filename}")
+async def delete_history_item(
+    filename: str,
+    current_user: dict = Depends(get_current_user)
+) -> dict:
+    user_email = current_user["email"]
+    try:
+        storage_path = f"{user_email}/history/{filename}"
+        supabase_client.storage.from_("resumes").remove(storage_path)
+        return {
+            "status": "success",
+            "message": "History item deleted successfully."
+        }
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to delete history item: {str(e)}"
+        )

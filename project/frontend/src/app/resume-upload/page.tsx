@@ -45,6 +45,120 @@ export default function ResumeUploadPage() {
   const [parsedResume, setParsedResume] = useState<any | null>(null);
   const [showJsonInspector, setShowJsonInspector] = useState(false);
 
+  // Previously uploaded resumes state
+  const [uploadedResumes, setUploadedResumes] = useState<{ name: string; url: string; size: number; created_at?: string; updated_at?: string }[]>([]);
+  const [loadingResumes, setLoadingResumes] = useState(false);
+
+  const fetchUploadedResumes = async () => {
+    const token = localStorage.getItem("token");
+    if (!token) return;
+    
+    setLoadingResumes(true);
+    try {
+      const response = await fetch(`${API_URL}/api/resume/list`, {
+        headers: {
+          "Authorization": `Bearer ${token}`
+        }
+      });
+      const data = await response.json();
+      if (response.ok) {
+        setUploadedResumes(data.resumes || []);
+      }
+    } catch (err) {
+      console.error("Failed to load uploaded resumes list:", err);
+    } finally {
+      setLoadingResumes(false);
+    }
+  };
+
+  // Select an existing resume to parse and activate
+  const handleSelectResume = async (filename: string) => {
+    setParsing(true);
+    setParseStage("extracting");
+    setErrorMsg("");
+    setSuccess(false);
+
+    const token = localStorage.getItem("token");
+    if (!token) return;
+
+    const stage1Timeout = setTimeout(() => setParseStage("analyzing"), 2000);
+    const stage2Timeout = setTimeout(() => setParseStage("saving"), 6000);
+
+    try {
+      const response = await fetch(`${API_URL}/api/resume/select`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${token}`
+        },
+        body: JSON.stringify({ filename })
+      });
+
+      clearTimeout(stage1Timeout);
+      clearTimeout(stage2Timeout);
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.detail || "Failed to select and parse resume.");
+      }
+
+      setParseStage("");
+      setParsedResume(data.parsed_data);
+      setResumeUrl(data.resume_url);
+      setSuccess(true);
+
+      if (userProfile) {
+        const updatedUser = { ...userProfile, resume_url: data.resume_url, parsed_resume: data.parsed_data };
+        setUserProfile(updatedUser);
+        localStorage.setItem("user", JSON.stringify(updatedUser));
+      }
+
+    } catch (err: any) {
+      setErrorMsg(err.message || "Resume selection failed.");
+      setParsing(false);
+    }
+  };
+
+  // Delete an uploaded resume
+  const handleDeleteResume = async (filename: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    
+    if (!confirm(`Are you sure you want to delete "${filename}"?`)) {
+      return;
+    }
+
+    const token = localStorage.getItem("token");
+    if (!token) return;
+
+    try {
+      const response = await fetch(`${API_URL}/api/resume/delete/${encodeURIComponent(filename)}`, {
+        method: "DELETE",
+        headers: {
+          "Authorization": `Bearer ${token}`
+        }
+      });
+
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.detail || "Failed to delete resume.");
+      }
+
+      if (resumeUrl && resumeUrl.includes(filename)) {
+        setResumeUrl("");
+        if (userProfile) {
+          const updatedUser = { ...userProfile, resume_url: "" };
+          setUserProfile(updatedUser);
+          localStorage.setItem("user", JSON.stringify(updatedUser));
+        }
+      }
+
+      fetchUploadedResumes();
+    } catch (err: any) {
+      alert(err.message || "An error occurred while deleting resume.");
+    }
+  };
+
   // Load session and verify redirect status
   useEffect(() => {
     const token = localStorage.getItem("token");
@@ -77,6 +191,9 @@ export default function ResumeUploadPage() {
             router.replace("/");
             return;
           }
+
+          // Fetch uploaded resumes list
+          fetchUploadedResumes();
         } else {
           // Fallback to local cache
           const parsedUser = JSON.parse(storedUser);
@@ -84,6 +201,7 @@ export default function ResumeUploadPage() {
           if (parsedUser.resume_url) {
             setResumeUrl(parsedUser.resume_url);
           }
+          fetchUploadedResumes();
         }
       } catch (err) {
         // Fallback to local cache
@@ -92,6 +210,7 @@ export default function ResumeUploadPage() {
         if (parsedUser.resume_url) {
           setResumeUrl(parsedUser.resume_url);
         }
+        fetchUploadedResumes();
       } finally {
         setLoadingProfile(false);
       }
@@ -300,6 +419,7 @@ export default function ResumeUploadPage() {
 
       // Automatically trigger parser!
       await handleParseResume();
+      fetchUploadedResumes();
 
     } catch (err: any) {
       setErrorMsg(err.message || "An unexpected error occurred during upload.");
@@ -696,11 +816,11 @@ export default function ResumeUploadPage() {
 
           </div>
         ) : (
-          
-          /* ========================================================
-             RESUME FILE DROPZONE / UPLOADING (Original Upload Panel)
-             ======================================================== */
-          <div className="glass-panel rounded-3xl p-8 border border-white/10 relative overflow-hidden">
+          <>
+            {/* ========================================================
+               RESUME FILE DROPZONE / UPLOADING (Original Upload Panel)
+               ======================================================== */}
+            <div className="glass-panel rounded-3xl p-8 border border-white/10 relative overflow-hidden">
             <div className="absolute top-0 left-0 right-0 h-[2px] bg-gradient-to-r from-transparent via-indigo-500/20 to-purple-500/20"></div>
 
             <form onSubmit={handleUploadSubmit} className="space-y-6">
@@ -792,6 +912,67 @@ export default function ResumeUploadPage() {
               </div>
             </form>
           </div>
+
+          {/* Previously Uploaded Resumes List */}
+          {uploadedResumes.length > 0 && (
+            <div className="mt-8 space-y-4">
+              <h3 className="text-sm font-bold flex items-center gap-2 text-zinc-300 border-b border-white/5 pb-2">
+                <Database className="h-4.5 w-4.5 text-indigo-400" />
+                <span>Your Uploaded Resumes</span>
+              </h3>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                {uploadedResumes.map((resume) => {
+                  const isActive = resumeUrl && resumeUrl.includes(resume.name);
+                  return (
+                    <div
+                      key={resume.name}
+                      onClick={() => !parsing && !uploading && handleSelectResume(resume.name)}
+                      className={`flex flex-col justify-between p-4 rounded-2xl transition-all duration-300 border cursor-pointer ${
+                        isActive
+                          ? "bg-indigo-500/10 border-indigo-500/40 shadow-lg shadow-indigo-500/5 text-white"
+                          : "bg-white/[0.01] hover:bg-white/[0.03] border-white/5 hover:border-white/10 text-zinc-300 hover:text-white"
+                      }`}
+                    >
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="flex items-center gap-3 min-w-0">
+                          <div className={`p-2.5 rounded-xl border ${isActive ? "bg-indigo-500/20 border-indigo-500/30 text-indigo-300" : "bg-white/5 border-white/10 text-zinc-400"}`}>
+                            <FileText className="h-5 w-5" />
+                          </div>
+                          <div className="text-left min-w-0">
+                            <p className="font-semibold text-xs truncate max-w-[180px]" title={resume.name}>
+                              {resume.name}
+                            </p>
+                            <p className="text-[10px] text-zinc-500 mt-0.5">
+                              {(resume.size / 1024).toFixed(0)} KB • {resume.updated_at ? new Date(resume.updated_at).toLocaleDateString() : ""}
+                            </p>
+                          </div>
+                        </div>
+                        <button
+                          onClick={(e) => handleDeleteResume(resume.name, e)}
+                          className="p-2 bg-white/5 hover:bg-red-950/20 hover:text-red-400 border border-white/5 hover:border-red-500/20 rounded-xl transition-all text-zinc-400"
+                          title="Delete resume"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </button>
+                      </div>
+                      <div className="mt-4 flex justify-between items-center">
+                        {isActive ? (
+                          <span className="inline-flex items-center gap-1 text-[10px] text-emerald-400 font-bold bg-emerald-500/10 px-2 py-0.5 rounded-md border border-emerald-500/20">
+                            <CheckCircle2 className="h-3 w-3" /> Active Resume
+                          </span>
+                        ) : (
+                          <span className="text-[10px] text-zinc-500 group-hover:text-zinc-300">
+                            Click to use this resume
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+          </>
         )}
 
       </div>
