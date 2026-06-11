@@ -130,6 +130,7 @@ class ATSOptimizeRequest(BaseModel):
     resume_json: Optional[Dict[str, Any]] = None
     job_description_text: Optional[str] = None
     job_url: Optional[str] = None
+    resume_name: Optional[str] = None
 
 async def scrape_job_description(url: str) -> str:
     """
@@ -270,80 +271,120 @@ async def optimize_resume(
     resume_data = req.resume_json
     if not resume_data:
         user_email = current_user["email"]
-        try:
-            # Get profile record to retrieve profile_id
-            profile_res = supabase_client.table("profiles").select("*").eq("email", user_email.lower()).execute()
-            if not profile_res.data:
+        if req.resume_name:
+            # Try to load cached parsed JSON for the specific resume
+            try:
+                json_filename = f"{os.path.splitext(req.resume_name)[0]}_parsed.json"
+                storage_path = f"{user_email}/{json_filename}"
+                print(f"Loading parsed resume cache: {storage_path}")
+                file_bytes = supabase_client.storage.from_("resumes").download(storage_path)
+                resume_data = json.loads(file_bytes.decode("utf-8"))
+            except Exception as cache_err:
+                print(f"Could not load cached parsed JSON for {req.resume_name}: {cache_err}")
+                # Fallback to downloading the raw file and parsing it dynamically
+                try:
+                    raw_storage_path = f"{user_email}/{req.resume_name}"
+                    print(f"Downloading raw resume for dynamic parsing: {raw_storage_path}")
+                    file_bytes = supabase_client.storage.from_("resumes").download(raw_storage_path)
+                    
+                    from app.utils.layout_extractor import extract_document_content
+                    from app.utils.gemini_client import parse_resume_text
+                    
+                    extracted_text = extract_document_content(file_bytes, req.resume_name)
+                    parsed_data = parse_resume_text(extracted_text, user_email)
+                    resume_data = parsed_data.model_dump()
+                    
+                    # Cache the parsed JSON back to Supabase
+                    try:
+                        parsed_json_bytes = json.dumps(resume_data, indent=2).encode("utf-8")
+                        supabase_client.storage.from_("resumes").upload(
+                            path=storage_path,
+                            file=parsed_json_bytes,
+                            file_options={"content-type": "application/json", "upsert": "true"}
+                        )
+                    except Exception as upload_err:
+                        print(f"Failed to cache dynamically parsed resume JSON: {upload_err}")
+                except Exception as parse_err:
+                    raise HTTPException(
+                        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                        detail=f"Failed to load or parse the selected resume {req.resume_name}: {str(parse_err)}"
+                    )
+        else:
+            # Fallback to the active database profile (original logic)
+            try:
+                # Get profile record to retrieve profile_id
+                profile_res = supabase_client.table("profiles").select("*").eq("email", user_email.lower()).execute()
+                if not profile_res.data:
+                    raise HTTPException(
+                        status_code=status.HTTP_404_NOT_FOUND,
+                        detail="User profile not found. Please setup your profile and upload a resume first."
+                    )
+                
+                profile = profile_res.data[0]
+                profile_id = profile["id"]
+                
+                # Fetch experience
+                exp_res = supabase_client.table("experience").select("*").eq("profile_id", profile_id).execute()
+                # Fetch education
+                edu_res = supabase_client.table("education").select("*").eq("profile_id", profile_id).execute()
+                # Fetch projects
+                proj_res = supabase_client.table("projects").select("*").eq("profile_id", profile_id).execute()
+                # Fetch certifications
+                cert_res = supabase_client.table("certifications").select("*").eq("profile_id", profile_id).execute()
+                # Fetch skills
+                skills_res = supabase_client.table("skills").select("name").eq("profile_id", profile_id).execute()
+                
+                skills = [s["name"] for s in skills_res.data] if skills_res.data else []
+                
+                # Compile Resume JSON
+                resume_data = {
+                    "full_name": profile.get("name", ""),
+                    "email": profile.get("email", ""),
+                    "phone": profile.get("phone", ""),
+                    "location": profile.get("location", ""),
+                    "linkedin_url": profile.get("linkedin_url", ""),
+                    "github_url": profile.get("github_url", ""),
+                    "portfolio_url": profile.get("portfolio_url", ""),
+                    "skills": skills,
+                    "experience": [
+                        {
+                            "company": exp.get("company", ""),
+                            "role": exp.get("role", ""),
+                            "duration": exp.get("duration", ""),
+                            "description": exp.get("description", "")
+                        } for exp in (exp_res.data or [])
+                    ],
+                    "projects": [
+                        {
+                            "name": proj.get("name", ""),
+                            "description": proj.get("description", ""),
+                            "url": proj.get("url", "")
+                        } for proj in (proj_res.data or [])
+                    ],
+                    "education": [
+                        {
+                            "institution": edu.get("institution", ""),
+                            "degree": edu.get("degree", ""),
+                            "year": edu.get("year", "")
+                        } for edu in (edu_res.data or [])
+                    ],
+                    "certifications": [
+                        {
+                            "name": cert.get("name", ""),
+                            "issuer": cert.get("issuer", ""),
+                            "date": cert.get("date", "")
+                        } for cert in (cert_res.data or [])
+                    ],
+                    "total_experience_years": profile.get("total_experience_years", 0),
+                    "preferred_job_roles": profile.get("preferred_job_roles", [])
+                }
+            except HTTPException as he:
+                raise he
+            except Exception as e:
                 raise HTTPException(
-                    status_code=status.HTTP_404_NOT_FOUND,
-                    detail="User profile not found. Please setup your profile and upload a resume first."
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail=f"Failed to fetch profile details: {str(e)}"
                 )
-            
-            profile = profile_res.data[0]
-            profile_id = profile["id"]
-            
-            # Fetch experience
-            exp_res = supabase_client.table("experience").select("*").eq("profile_id", profile_id).execute()
-            # Fetch education
-            edu_res = supabase_client.table("education").select("*").eq("profile_id", profile_id).execute()
-            # Fetch projects
-            proj_res = supabase_client.table("projects").select("*").eq("profile_id", profile_id).execute()
-            # Fetch certifications
-            cert_res = supabase_client.table("certifications").select("*").eq("profile_id", profile_id).execute()
-            # Fetch skills
-            skills_res = supabase_client.table("skills").select("name").eq("profile_id", profile_id).execute()
-            
-            skills = [s["name"] for s in skills_res.data] if skills_res.data else []
-            
-            # Compile Resume JSON
-            resume_data = {
-                "full_name": profile.get("name", ""),
-                "email": profile.get("email", ""),
-                "phone": profile.get("phone", ""),
-                "location": profile.get("location", ""),
-                "linkedin_url": profile.get("linkedin_url", ""),
-                "github_url": profile.get("github_url", ""),
-                "portfolio_url": profile.get("portfolio_url", ""),
-                "skills": skills,
-                "experience": [
-                    {
-                        "company": exp.get("company", ""),
-                        "role": exp.get("role", ""),
-                        "duration": exp.get("duration", ""),
-                        "description": exp.get("description", "")
-                    } for exp in (exp_res.data or [])
-                ],
-                "projects": [
-                    {
-                        "name": proj.get("name", ""),
-                        "description": proj.get("description", ""),
-                        "url": proj.get("url", "")
-                    } for proj in (proj_res.data or [])
-                ],
-                "education": [
-                    {
-                        "institution": edu.get("institution", ""),
-                        "degree": edu.get("degree", ""),
-                        "year": edu.get("year", "")
-                    } for edu in (edu_res.data or [])
-                ],
-                "certifications": [
-                    {
-                        "name": cert.get("name", ""),
-                        "issuer": cert.get("issuer", ""),
-                        "date": cert.get("date", "")
-                    } for cert in (cert_res.data or [])
-                ],
-                "total_experience_years": profile.get("total_experience_years", 0),
-                "preferred_job_roles": profile.get("preferred_job_roles", [])
-            }
-        except HTTPException as he:
-            raise he
-        except Exception as e:
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=f"Failed to fetch profile details: {str(e)}"
-            )
 
     # Preprocess resume_data education to split and clean degree & gpa
     if resume_data and "education" in resume_data:

@@ -120,6 +120,12 @@ export default function HomePage() {
   const [loadingHistory, setLoadingHistory] = useState(false);
   const [activeHistoryFilename, setActiveHistoryFilename] = useState<string | null>(null);
 
+  // Resume Selector States
+  const [step, setStep] = useState<"input" | "select_resume" | "results">("input");
+  const [resumesList, setResumesList] = useState<any[]>([]);
+  const [selectedResumeName, setSelectedResumeName] = useState<string | null>(null);
+  const [loadingResumes, setLoadingResumes] = useState(false);
+
   // Result Tabs
   const [activeTab, setActiveTab] = useState<"scores" | "keywords" | "resume" | "report">("scores");
   const [resumeSectionTab, setResumeSectionTab] = useState<"summary" | "skills" | "experience" | "projects" | "education">("summary");
@@ -210,6 +216,7 @@ export default function HomePage() {
       if (data.data && data.data.optimized_response) {
         setAtsData(data.data.optimized_response);
         setActiveHistoryFilename(filename);
+        setStep("results");
         setActiveTab("scores");
       } else {
         throw new Error("Invalid history data structure.");
@@ -241,6 +248,7 @@ export default function HomePage() {
         if (activeHistoryFilename === filename) {
           setAtsData(null);
           setActiveHistoryFilename(null);
+          setStep("input");
         }
         fetchHistory();
       } else {
@@ -311,6 +319,7 @@ export default function HomePage() {
 
             setAtsData(data);
             setOptimizeStage("");
+            setStep("results");
             setActiveTab("scores");
             
             // Refresh history list and automatically select the first item as active
@@ -399,15 +408,14 @@ export default function HomePage() {
     }
   };
 
-  // Trigger ATS Optimization API
-  const handleOptimize = async (e: React.FormEvent) => {
+  // Trigger ATS Optimization: fetches resumes list to proceed to selector
+  const handleJobSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMsg("");
     setAtsData(null);
-
+    
     const token = localStorage.getItem("token");
     if (!token) {
-      // User is not logged in: save pending input and redirect to auth page
       const pendingJob = {
         inputType,
         jobUrl: inputType === "url" ? jobUrl : "",
@@ -418,10 +426,49 @@ export default function HomePage() {
       return;
     }
 
+    setLoadingResumes(true);
+    try {
+      const res = await fetch(`${API_URL}/api/resume/list`, {
+        headers: { "Authorization": `Bearer ${token}` }
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.detail || "Failed to retrieve uploaded resumes.");
+      }
+      
+      const resumes = data.resumes || [];
+      setResumesList(resumes);
+
+      if (resumes.length === 0) {
+        setErrorMsg("No uploaded resumes found. Please upload a resume first before optimizing.");
+        return;
+      }
+
+      // Default the selection to the active resume from profile or the first resume in list
+      let defaultResume = resumes[0].name;
+      if (userProfile?.resume_url) {
+        const matching = resumes.find((r: any) => userProfile.resume_url?.includes(r.name));
+        if (matching) defaultResume = matching.name;
+      }
+      setSelectedResumeName(defaultResume);
+      setStep("select_resume");
+    } catch (err: any) {
+      setErrorMsg(err.message || "An error occurred while checking uploaded resumes.");
+    } finally {
+      setLoadingResumes(false);
+    }
+  };
+
+  // Run the actual LLM ATS Optimization call
+  const runOptimization = async () => {
+    setErrorMsg("");
+    setAtsData(null);
     setOptimizing(true);
     setOptimizeStage(inputType === "url" ? "scraping" : "analyzing");
 
-    // Simulate UX stages for smooth response tracking
+    const token = localStorage.getItem("token");
+    if (!token) return;
+
     const scrapeTimeout = setTimeout(() => {
       if (inputType === "url") setOptimizeStage("analyzing");
     }, 4000);
@@ -435,7 +482,9 @@ export default function HomePage() {
     }, 16000);
 
     try {
-      const payload: any = {};
+      const payload: any = {
+        resume_name: selectedResumeName
+      };
       if (inputType === "url") {
         payload.job_url = jobUrl;
       } else {
@@ -462,24 +511,24 @@ export default function HomePage() {
 
       setAtsData(data);
       setOptimizeStage("");
+      setStep("results");
       setActiveTab("scores");
       
       // Refresh history list and automatically select the first item as active
-      if (token) {
-        fetch(`${API_URL}/api/ats/history`, {
-          headers: { "Authorization": `Bearer ${token}` }
-        })
-        .then(res => res.json())
-        .then(resData => {
-          if (resData.status === "success" && resData.history && resData.history.length > 0) {
-            setHistory(resData.history);
-            setActiveHistoryFilename(resData.history[0].filename);
-          }
-        })
-        .catch(err => console.error(err));
-      }
+      fetch(`${API_URL}/api/ats/history`, {
+        headers: { "Authorization": `Bearer ${token}` }
+      })
+      .then(res => res.json())
+      .then(resData => {
+        if (resData.status === "success" && resData.history && resData.history.length > 0) {
+          setHistory(resData.history);
+          setActiveHistoryFilename(resData.history[0].filename);
+        }
+      })
+      .catch(err => console.error(err));
     } catch (err: any) {
       setErrorMsg(err.message || "An error occurred during ATS analysis.");
+      setStep("select_resume");
     } finally {
       setOptimizing(false);
     }
@@ -649,6 +698,7 @@ export default function HomePage() {
                       onClick={() => {
                         setAtsData(null);
                         setActiveHistoryFilename(null);
+                        setStep("input");
                       }}
                       className="p-1.5 bg-white/[0.02] border border-white/10 hover:bg-white/[0.05] hover:text-white rounded-lg text-zinc-400 text-[10px] font-bold transition-all flex items-center gap-1"
                       title="New Tailoring Run"
@@ -734,7 +784,7 @@ export default function HomePage() {
             {/* Main Content Area (Right Column) */}
             <div className="lg:col-span-9 w-full">
               {/* INPUT PANEL AND LOADER CONTAINER */}
-              {!atsData && !optimizing && (
+              {step === "input" && !optimizing && (
                 <div className="glass-panel rounded-3xl p-8 border border-white/10 relative overflow-hidden shadow-2xl max-w-2xl mx-auto">
                   <div className="absolute top-0 left-0 right-0 h-[2px] bg-gradient-to-r from-transparent via-indigo-500/20 to-purple-500/20"></div>
 
@@ -765,7 +815,7 @@ export default function HomePage() {
                     </div>
                   )}
 
-                  <form onSubmit={handleOptimize} className="space-y-5">
+                  <form onSubmit={handleJobSubmit} className="space-y-5">
                     {inputType === "url" ? (
                       <div className="space-y-1.5">
                         <label className="text-xs font-bold text-zinc-400">Job Posting Link</label>
@@ -802,12 +852,136 @@ export default function HomePage() {
 
                     <button
                       type="submit"
-                      className="btn-shimmer w-full bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white font-bold py-3.5 px-6 rounded-xl text-sm active:scale-[0.98] transition-all flex items-center justify-center gap-2 border border-white/10"
+                      disabled={loadingResumes}
+                      className="btn-shimmer w-full bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white font-bold py-3.5 px-6 rounded-xl text-sm active:scale-[0.98] transition-all flex items-center justify-center gap-2 border border-white/10 disabled:opacity-50"
                     >
-                      <Cpu className="h-4 w-4" />
-                      <span>Optimize Resume for ATS</span>
+                      {loadingResumes ? (
+                        <>
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                          <span>Checking Resumes...</span>
+                        </>
+                      ) : (
+                        <>
+                          <Cpu className="h-4 w-4" />
+                          <span>Optimize Resume for ATS</span>
+                        </>
+                      )}
                     </button>
                   </form>
+                </div>
+              )}
+
+              {/* SELECT RESUME STEP */}
+              {step === "select_resume" && !optimizing && (
+                <div className="glass-panel rounded-3xl p-8 border border-white/10 relative overflow-hidden shadow-2xl max-w-2xl mx-auto space-y-6 animate-fade-in">
+                  <div className="absolute top-0 left-0 right-0 h-[2px] bg-gradient-to-r from-transparent via-indigo-500/20 to-purple-500/20"></div>
+
+                  <div className="space-y-1.5">
+                    <h3 className="text-xl font-bold flex items-center gap-2">
+                      <FileText className="h-5 w-5 text-indigo-400" />
+                      <span>Choose Resume for Optimization</span>
+                    </h3>
+                    <p className="text-xs text-zinc-400">
+                      Select which of your uploaded resume versions you want to tailor for this specific role description.
+                    </p>
+                  </div>
+
+                  {/* Job posting summary card */}
+                  <div className="bg-white/[0.01] border border-white/5 p-4 rounded-2xl space-y-1">
+                    <span className="text-[9px] uppercase font-bold tracking-widest text-zinc-500">Target Posting</span>
+                    <h4 className="text-xs font-bold text-white truncate">
+                      {inputType === "url" ? (
+                        <span className="flex items-center gap-1.5 text-indigo-400">
+                          <Link className="h-3.5 w-3.5" />
+                          <span>{jobUrl}</span>
+                        </span>
+                      ) : (
+                        <span className="text-zinc-300">
+                          {jobText.slice(0, 120)}{jobText.length > 120 ? "..." : ""}
+                        </span>
+                      )}
+                    </h4>
+                  </div>
+
+                  {/* Resumes cards grid */}
+                  <div className="space-y-2 max-h-[300px] overflow-y-auto pr-1 custom-scrollbar">
+                    {resumesList.map((resItem) => {
+                      const isSelected = selectedResumeName === resItem.name;
+                      const sizeKb = (resItem.size / 1024).toFixed(0);
+                      const dateStr = resItem.created_at || resItem.updated_at
+                        ? new Date(resItem.created_at || resItem.updated_at).toLocaleDateString("en-US", {
+                            month: "short",
+                            day: "numeric",
+                            year: "numeric"
+                          })
+                        : "Unknown Date";
+
+                      return (
+                        <div
+                          key={resItem.name}
+                          onClick={() => setSelectedResumeName(resItem.name)}
+                          className={`flex items-center justify-between p-4 rounded-2xl border cursor-pointer transition-all ${
+                            isSelected
+                              ? "bg-indigo-600/10 border-indigo-500/40 shadow-lg"
+                              : "bg-white/[0.01] border-white/5 hover:bg-white/[0.03] hover:border-white/10"
+                          }`}
+                        >
+                          <div className="flex items-center gap-3 min-w-0">
+                            <div className={`p-2.5 rounded-xl border ${isSelected ? "bg-indigo-500/20 border-indigo-500/30 text-indigo-300" : "bg-white/5 border-white/10 text-zinc-400"}`}>
+                              <FileText className="h-4.5 w-4.5" />
+                            </div>
+                            <div className="text-left min-w-0">
+                              <p className="font-bold text-xs text-white truncate max-w-[320px]" title={resItem.name}>
+                                {resItem.name}
+                              </p>
+                              <p className="text-[10px] text-zinc-500 mt-0.5">
+                                {sizeKb} KB • Uploaded {dateStr}
+                              </p>
+                            </div>
+                          </div>
+
+                          <div className="flex items-center gap-2">
+                            {isSelected && (
+                              <span className="h-2 w-2 rounded-full bg-indigo-500 animate-pulse"></span>
+                            )}
+                            <span className={`text-[10px] px-2.5 py-1 rounded-xl border font-bold transition-colors ${
+                              isSelected
+                                ? "bg-indigo-600 text-white border-transparent"
+                                : "bg-transparent text-zinc-400 border-white/10 hover:text-white"
+                            }`}>
+                              {isSelected ? "Selected" : "Select"}
+                            </span>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  {errorMsg && (
+                    <div className="flex items-center gap-3 bg-red-950/30 border border-red-500/20 text-red-300 p-4 rounded-2xl text-xs">
+                      <AlertCircle className="h-5 w-5 text-red-400 shrink-0" />
+                      <span>{errorMsg}</span>
+                    </div>
+                  )}
+
+                  {/* Navigation controls */}
+                  <div className="flex justify-between items-center pt-2">
+                    <button
+                      onClick={() => setStep("input")}
+                      className="px-5 py-2.5 bg-white/[0.02] border border-white/10 hover:bg-white/[0.05] rounded-xl text-xs font-semibold text-zinc-300 transition-all"
+                    >
+                      Back to Input
+                    </button>
+
+                    <button
+                      onClick={runOptimization}
+                      disabled={!selectedResumeName}
+                      className="btn-shimmer bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white font-bold py-2.5 px-6 rounded-xl text-xs shadow-xl active:scale-[0.98] transition-all flex items-center gap-2 border border-white/10 disabled:opacity-50"
+                    >
+                      <Sparkles className="h-3.5 w-3.5" />
+                      <span>Run AI Optimization</span>
+                    </button>
+                  </div>
                 </div>
               )}
 
@@ -849,7 +1023,7 @@ export default function HomePage() {
               )}
 
               {/* COMPATIBILITY RESULTS VIEW */}
-              {atsData && (
+              {step === "results" && atsData && (
                 <div className="space-y-6">
 
                   {/* Sub-Header bar / Controls */}
@@ -1441,7 +1615,7 @@ export default function HomePage() {
         ) : (
           <div className="max-w-2xl mx-auto">
             {/* INPUT PANEL AND LOADER CONTAINER */}
-            {!atsData && !optimizing && (
+            {step === "input" && !optimizing && (
               <div className="glass-panel rounded-3xl p-8 border border-white/10 relative overflow-hidden shadow-2xl w-full">
                 <div className="absolute top-0 left-0 right-0 h-[2px] bg-gradient-to-r from-transparent via-indigo-500/20 to-purple-500/20"></div>
 
@@ -1472,7 +1646,7 @@ export default function HomePage() {
                   </div>
                 )}
 
-                <form onSubmit={handleOptimize} className="space-y-5">
+                <form onSubmit={handleJobSubmit} className="space-y-5">
                   {inputType === "url" ? (
                     <div className="space-y-1.5">
                       <label className="text-xs font-bold text-zinc-400">Job Posting Link</label>
@@ -1507,16 +1681,26 @@ export default function HomePage() {
                     </div>
                   )}
 
-                  <button
-                    type="submit"
-                    className="btn-shimmer w-full bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white font-bold py-3.5 px-6 rounded-xl text-sm active:scale-[0.98] transition-all flex items-center justify-center gap-2 border border-white/10"
-                  >
-                    <Cpu className="h-4 w-4" />
-                    <span>Optimize Resume for ATS</span>
-                  </button>
-                </form>
-              </div>
-            )}
+                    <button
+                      type="submit"
+                      disabled={loadingResumes}
+                      className="btn-shimmer w-full bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white font-bold py-3.5 px-6 rounded-xl text-sm active:scale-[0.98] transition-all flex items-center justify-center gap-2 border border-white/10 disabled:opacity-50"
+                    >
+                      {loadingResumes ? (
+                        <>
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                          <span>Checking Resumes...</span>
+                        </>
+                      ) : (
+                        <>
+                          <Cpu className="h-4 w-4" />
+                          <span>Optimize Resume for ATS</span>
+                        </>
+                      )}
+                    </button>
+                  </form>
+                </div>
+              )}
 
             {/* LOADING STATE */}
             {optimizing && (
